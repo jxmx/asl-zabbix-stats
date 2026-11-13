@@ -1,0 +1,778 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 363fd1e3dc9a4b7f80ada403a2c6a737
+      name: Templates/Applications
+  templates:
+    - uuid: e91c793ff0a7427e8eba31fb67e99d0e
+      template: 'AllStarLink app_rpt by Zabbix agent 2'
+      name: 'AllStarLink app_rpt by Zabbix agent 2'
+      description: |
+        IAX2 call quality, app_rpt node/link counts and Linux pressure-stall
+        figures for an AllStarLink host. One master item (asl.stats, a
+        UserParameter running asl-zabbix-stats) feeds everything else.
+
+        rx = what this host receives (its own jitter buffer).
+        tx = what the far end reports receiving from this host.
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: f2ad993d81f349d99f6573264bf17852
+          name: 'ASL: Get stats'
+          key: asl.stats
+          delay: 1m
+          history: 1d
+          value_type: TEXT
+          trends: '0'
+          timeout: 20s
+          tags:
+            - tag: component
+              value: raw
+          triggers:
+            - uuid: 013d6818704847deb36ada1bb3693ee7
+              expression: 'nodata(/AllStarLink app_rpt by Zabbix agent 2/asl.stats,5m)=1'
+              name: 'ASL: No stats received for 5m'
+              priority: WARNING
+              description: 'The collector is not returning data. Check the UserParameter, the sudoers rule and the item timeout.'
+        - uuid: be6d083fb562423e804de948a8a64f59
+          name: 'ASL: Asterisk CLI reachable'
+          type: DEPENDENT
+          key: asl.asterisk.up
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.asterisk_up
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: asterisk
+          triggers:
+            - uuid: c5140e642cc9468c87c12798f0e51397
+              expression: 'max(/AllStarLink app_rpt by Zabbix agent 2/asl.asterisk.up,3m)=0'
+              name: 'ASL: Asterisk is not answering CLI commands'
+              priority: HIGH
+        - uuid: 8089e724fe474ffc929bacae460f01ce
+          name: 'ASL: Collector run time'
+          type: DEPENDENT
+          key: asl.collect.ms
+          delay: '0'
+          units: ms
+          description: 'How long the CLI commands took. A rise here while the host is "idle" is itself a sign of real stalls.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.collect_ms
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: asterisk
+        - uuid: af5ea53fb94a445982cd769506f64b20
+          name: 'ASL: Load average (1m)'
+          type: DEPENDENT
+          key: asl.sys.load1
+          delay: '0'
+          value_type: FLOAT
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.load1
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: system
+        - uuid: bfa23615a55d45e2ad06fe2e3c20e3e4
+          name: 'ASL: Tasks runnable'
+          type: DEPENDENT
+          key: asl.sys.procs.running
+          delay: '0'
+          description: 'Instantaneous procs_running from /proc/stat (includes the collector itself).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.procs_running
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: system
+        - uuid: 747f129d72264445b37a46b53b27f447
+          name: 'ASL: Tasks blocked on I/O'
+          type: DEPENDENT
+          key: asl.sys.procs.blocked
+          delay: '0'
+          description: 'Instantaneous procs_blocked from /proc/stat.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.procs_blocked
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: system
+        - uuid: ed38b9f7e1d64bd4a905bf9bf23b7dd9
+          name: 'ASL: CPU pressure (some)'
+          type: DEPENDENT
+          key: asl.psi.cpu.some
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of wall time in which at least one task was waiting for a CPU, from the /proc/pressure/cpu total counter.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.psi.cpu_some_total
+              error_handler: DISCARD_VALUE
+            - type: CHANGE_PER_SECOND
+              parameters:
+                - ''
+            - type: MULTIPLIER
+              parameters:
+                - '0.0001'
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: 5f455111e04f4debb11a5fc72f798265
+              expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.psi.cpu.some,5m)>{$ASL.PSI.CPU.WARN}'
+              name: 'ASL: Sustained CPU pressure (>{$ASL.PSI.CPU.WARN}% for 5m)'
+              priority: WARNING
+        - uuid: 29539833b34c446fb99a5d77ebe39e5c
+          name: 'ASL: I/O pressure (some)'
+          type: DEPENDENT
+          key: asl.psi.io.some
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of wall time in which at least one task was stalled on I/O.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.psi.io_some_total
+              error_handler: DISCARD_VALUE
+            - type: CHANGE_PER_SECOND
+              parameters:
+                - ''
+            - type: MULTIPLIER
+              parameters:
+                - '0.0001'
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: system
+          triggers:
+            - uuid: a5e8aa8164f845938032194a0e4e0374
+              expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.psi.io.some,5m)>{$ASL.PSI.IO.WARN}'
+              name: 'ASL: Sustained I/O pressure (>{$ASL.PSI.IO.WARN}% for 5m)'
+              priority: WARNING
+        - uuid: 90d67d323718428a9b6cd986c9342903
+          name: 'ASL: I/O pressure (full)'
+          type: DEPENDENT
+          key: asl.psi.io.full
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of wall time in which all non-idle tasks were stalled on I/O at once.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.psi.io_full_total
+              error_handler: DISCARD_VALUE
+            - type: CHANGE_PER_SECOND
+              parameters:
+                - ''
+            - type: MULTIPLIER
+              parameters:
+                - '0.0001'
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: system
+        - uuid: 8d2c53322e434354b9c7d4be2c2ec5c3
+          name: 'ASL: Memory pressure (some)'
+          type: DEPENDENT
+          key: asl.psi.mem.some
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.system.psi.memory_some_total
+              error_handler: DISCARD_VALUE
+            - type: CHANGE_PER_SECOND
+              parameters:
+                - ''
+            - type: MULTIPLIER
+              parameters:
+                - '0.0001'
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: system
+        - uuid: 8ed66d87a4c0497397663f356aa51b9d
+          name: 'ASL: IAX2 active calls'
+          type: DEPENDENT
+          key: asl.iax.channels
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.channels
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+        - uuid: 48377e504f8f4731953f528a6e0e2af8
+          name: 'ASL: IAX2 calls reporting rx jitter'
+          type: DEPENDENT
+          key: asl.iax.rx.reporting
+          delay: '0'
+          description: 'Calls with local jitter-buffer figures. If this stays 0 while calls are up, the jitter buffer is off and the rx items read 0.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.rx_reporting
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+        - uuid: 46b349099c784f4cad6d1c80818b7569
+          name: 'ASL: IAX2 round trip time, worst call'
+          type: DEPENDENT
+          key: asl.iax.rtt.max
+          delay: '0'
+          units: ms
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.rtt_max
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+          triggers:
+            - uuid: c84485c02ca1472a9cd0c1eede606a42
+              expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.iax.rtt.max,5m)>{$ASL.IAX.RTT.WARN}'
+              name: 'ASL: IAX2 round trip time high (>{$ASL.IAX.RTT.WARN}ms for 5m)'
+              priority: WARNING
+        - uuid: 77387c981bb247c78b55e9eba9b2038f
+          name: 'ASL: IAX2 round trip time, average'
+          type: DEPENDENT
+          key: asl.iax.rtt.avg
+          delay: '0'
+          value_type: FLOAT
+          units: ms
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.rtt_avg
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+        - uuid: dc1f7836b64749cf931278bb632f74e0
+          name: 'ASL: IAX2 rx jitter, worst call'
+          type: DEPENDENT
+          key: asl.iax.rx.jitter.max
+          delay: '0'
+          units: ms
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.rx_jitter_max
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+          triggers:
+            - uuid: ea1ceb6c40704e539bf875501c876757
+              expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.iax.rx.jitter.max,5m)>{$ASL.IAX.JITTER.WARN}'
+              name: 'ASL: IAX2 rx jitter high (>{$ASL.IAX.JITTER.WARN}ms for 5m)'
+              priority: WARNING
+        - uuid: 01ce06853aaf4bab868d34999a5c528e
+          name: 'ASL: IAX2 tx jitter, worst call'
+          type: DEPENDENT
+          key: asl.iax.tx.jitter.max
+          delay: '0'
+          units: ms
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.tx_jitter_max
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+          triggers:
+            - uuid: c923562e72734a77a8901c9fb0649900
+              expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.iax.tx.jitter.max,5m)>{$ASL.IAX.JITTER.WARN}'
+              name: 'ASL: IAX2 tx jitter high (>{$ASL.IAX.JITTER.WARN}ms for 5m)'
+              priority: WARNING
+        - uuid: 499f3214bcb644ceab628dc59a12f184
+          name: 'ASL: IAX2 rx jitter-buffer delay, worst call'
+          type: DEPENDENT
+          key: asl.iax.rx.delay.max
+          delay: '0'
+          units: ms
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.rx_delay_max
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+        - uuid: f53e48c2143e41fb8fa1db40feb1ed7b
+          name: 'ASL: IAX2 rx packet loss, worst call'
+          type: DEPENDENT
+          key: asl.iax.rx.loss.max
+          delay: '0'
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.rx_loss_pct_max
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+          triggers:
+            - uuid: c6f806702bdc4a909ee268caf9b16093
+              expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.iax.rx.loss.max,5m)>{$ASL.IAX.LOSS.WARN}'
+              name: 'ASL: IAX2 rx packet loss high (>{$ASL.IAX.LOSS.WARN}% for 5m)'
+              priority: AVERAGE
+        - uuid: 56ffee89b6fc465c8f7b0fbbe662dfe6
+          name: 'ASL: IAX2 tx packet loss, worst call'
+          type: DEPENDENT
+          key: asl.iax.tx.loss.max
+          delay: '0'
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.iax.tx_loss_pct_max
+          master_item:
+            key: asl.stats
+          tags:
+            - tag: component
+              value: iax
+          triggers:
+            - uuid: ecbcb2d8a3724b77a1721c30b8b94529
+              expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.iax.tx.loss.max,5m)>{$ASL.IAX.LOSS.WARN}'
+              name: 'ASL: IAX2 tx packet loss high (>{$ASL.IAX.LOSS.WARN}% for 5m)'
+              priority: AVERAGE
+      discovery_rules:
+        - uuid: 083a270cbe3e432186f113bc1ff1b204
+          name: 'ASL: Local node discovery'
+          type: DEPENDENT
+          key: asl.node.discovery
+          delay: '0'
+          lifetime: 7d
+          item_prototypes:
+            - uuid: 428c2405eff2423696bf4f021bd2ae12
+              name: 'Node {#NODE}: Direct links'
+              type: DEPENDENT
+              key: 'asl.node.links[{#NODE}]'
+              delay: '0'
+              description: 'RPT_NUMLINKS: nodes linked directly to this node.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.nodes[?(@.node=='{#NODE}')].numlinks.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: node
+                - tag: node
+                  value: '{#NODE}'
+              trigger_prototypes:
+                - uuid: 4df741a0d3ff45538fa8ed2b32ea30e5
+                  expression: 'max(/AllStarLink app_rpt by Zabbix agent 2/asl.node.links[{#NODE}],5m)<{$ASL.LINKS.MIN}'
+                  name: 'Node {#NODE}: Fewer than {$ASL.LINKS.MIN} direct links for 5m'
+                  priority: AVERAGE
+                  description: 'Disabled in effect while {$ASL.LINKS.MIN} is 0. Set it per host (or per node with context) for hubs and permanently linked nodes.'
+            - uuid: 1afdd23ab3224206bbd54d36d25a34da
+              name: 'Node {#NODE}: Direct links keyed'
+              type: DEPENDENT
+              key: 'asl.node.links.keyed[{#NODE}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.nodes[?(@.node=='{#NODE}')].links_keyed.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: node
+                - tag: node
+                  value: '{#NODE}'
+            - uuid: e75be8f7a2ce4435a0bb870eeb40e721
+              name: 'Node {#NODE}: Direct links still connecting'
+              type: DEPENDENT
+              key: 'asl.node.links.connecting[{#NODE}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.nodes[?(@.node=='{#NODE}')].links_connecting.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: node
+                - tag: node
+                  value: '{#NODE}'
+              trigger_prototypes:
+                - uuid: b80069482d894694be13373300437fc4
+                  expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.node.links.connecting[{#NODE}],10m)>0'
+                  name: 'Node {#NODE}: Link stuck connecting for 10m'
+                  priority: WARNING
+            - uuid: aad5e460178845a7874a5a5f48af021a
+              name: 'Node {#NODE}: Connected nodes (whole network)'
+              type: DEPENDENT
+              key: 'asl.node.connected[{#NODE}]'
+              delay: '0'
+              description: 'Every node reachable through this node, direct and indirect (rpt nodes).'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.nodes[?(@.node=='{#NODE}')].connected_total.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: node
+                - tag: node
+                  value: '{#NODE}'
+            - uuid: 17d4bdb3009444ff88836ce0919587b9
+              name: 'Node {#NODE}: RX keyed'
+              type: DEPENDENT
+              key: 'asl.node.rxkeyed[{#NODE}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.nodes[?(@.node=='{#NODE}')].rxkeyed.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: node
+                - tag: node
+                  value: '{#NODE}'
+            - uuid: 5d1f24b568e54ad5b35edad57f93f71b
+              name: 'Node {#NODE}: TX keyed'
+              type: DEPENDENT
+              key: 'asl.node.txkeyed[{#NODE}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.nodes[?(@.node=='{#NODE}')].txkeyed.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: node
+                - tag: node
+                  value: '{#NODE}'
+              trigger_prototypes:
+                - uuid: fcc6109634494bc992c7c2059dafd849
+                  expression: 'min(/AllStarLink app_rpt by Zabbix agent 2/asl.node.txkeyed[{#NODE}],{$ASL.TXKEYED.MAX})=1'
+                  name: 'Node {#NODE}: Transmitter keyed continuously for {$ASL.TXKEYED.MAX}'
+                  priority: WARNING
+                  description: 'Sampled once a minute, so this means keyed at every sample in the window.'
+          graph_prototypes:
+            - uuid: bc9f58bb4f424717b879531f316acfb9
+              name: 'Node {#NODE}: Links'
+              graph_items:
+                - color: 1A7C11
+                  item:
+                    host: 'AllStarLink app_rpt by Zabbix agent 2'
+                    key: 'asl.node.links[{#NODE}]'
+                - sortorder: '1'
+                  color: 2774A4
+                  item:
+                    host: 'AllStarLink app_rpt by Zabbix agent 2'
+                    key: 'asl.node.connected[{#NODE}]'
+                - sortorder: '2'
+                  color: F63100
+                  item:
+                    host: 'AllStarLink app_rpt by Zabbix agent 2'
+                    key: 'asl.node.links.keyed[{#NODE}]'
+          master_item:
+            key: asl.stats
+          lld_macro_paths:
+            - lld_macro: '{#NODE}'
+              path: $.node
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.nodes
+        - uuid: 25525ce4c8204b668c4da752ea01ef61
+          name: 'ASL: Direct link discovery'
+          type: DEPENDENT
+          key: asl.link.discovery
+          delay: '0'
+          description: 'One set of items per directly connected node. Narrow {$ASL.LINK.MATCHES} to your permanent links on hosts with many transient connections.'
+          filter:
+            conditions:
+              - macro: '{#LINKNODE}'
+                value: '{$ASL.LINK.MATCHES}'
+                formulaid: A
+          lifetime: 1d
+          item_prototypes:
+            - uuid: 0d0b4fbe4e3348f195cea9a1d472b914
+              name: 'Link {#LOCALNODE} to {#LINKNODE}: Established'
+              type: DEPENDENT
+              key: 'asl.link.established[{#LINKID}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.links[?(@.id=='{#LINKID}')].established.first()"
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '0'
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: link
+                - tag: link
+                  value: '{#LINKID}'
+            - uuid: d434eb322c014945a0fea69eecbfcc60
+              name: 'Link {#LOCALNODE} to {#LINKNODE}: Reconnects'
+              type: DEPENDENT
+              key: 'asl.link.reconnects[{#LINKID}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.links[?(@.id=='{#LINKID}')].reconnects.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: link
+                - tag: link
+                  value: '{#LINKID}'
+              trigger_prototypes:
+                - uuid: 10def3950a5747908524c26b6226e368
+                  expression: 'max(/AllStarLink app_rpt by Zabbix agent 2/asl.link.reconnects[{#LINKID}],15m)-min(/AllStarLink app_rpt by Zabbix agent 2/asl.link.reconnects[{#LINKID}],15m)>={$ASL.LINK.RECONNECTS.WARN}'
+                  name: 'Link {#LOCALNODE} to {#LINKNODE}: Flapping ({$ASL.LINK.RECONNECTS.WARN}+ reconnects in 15m)'
+                  priority: WARNING
+            - uuid: f3c89e2810dc4ad4a1ce62700e64633c
+              name: 'Link {#LOCALNODE} to {#LINKNODE}: Round trip time'
+              type: DEPENDENT
+              key: 'asl.link.rtt[{#LINKID}]'
+              delay: '0'
+              units: ms
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.links[?(@.id=='{#LINKID}')].rtt.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: link
+                - tag: link
+                  value: '{#LINKID}'
+            - uuid: 914e25ed626149a984ad1024a6bdcaf0
+              name: 'Link {#LOCALNODE} to {#LINKNODE}: rx jitter'
+              type: DEPENDENT
+              key: 'asl.link.rx.jitter[{#LINKID}]'
+              delay: '0'
+              units: ms
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.links[?(@.id=='{#LINKID}')].rx_jitter.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: link
+                - tag: link
+                  value: '{#LINKID}'
+            - uuid: 71641aa268aa42c9a6fe3cce3c5614d4
+              name: 'Link {#LOCALNODE} to {#LINKNODE}: tx jitter'
+              type: DEPENDENT
+              key: 'asl.link.tx.jitter[{#LINKID}]'
+              delay: '0'
+              units: ms
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.links[?(@.id=='{#LINKID}')].tx_jitter.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: link
+                - tag: link
+                  value: '{#LINKID}'
+            - uuid: d8a0874621b741f9a56d7922974cb7fa
+              name: 'Link {#LOCALNODE} to {#LINKNODE}: rx packet loss'
+              type: DEPENDENT
+              key: 'asl.link.rx.loss[{#LINKID}]'
+              delay: '0'
+              units: '%'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.links[?(@.id=='{#LINKID}')].rx_loss_pct.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: link
+                - tag: link
+                  value: '{#LINKID}'
+            - uuid: 86f7c825c90142ffa317d0cfbc4be268
+              name: 'Link {#LOCALNODE} to {#LINKNODE}: tx packet loss'
+              type: DEPENDENT
+              key: 'asl.link.tx.loss[{#LINKID}]'
+              delay: '0'
+              units: '%'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.links[?(@.id=='{#LINKID}')].tx_loss_pct.first()"
+                  error_handler: DISCARD_VALUE
+              master_item:
+                key: asl.stats
+              tags:
+                - tag: component
+                  value: link
+                - tag: link
+                  value: '{#LINKID}'
+          master_item:
+            key: asl.stats
+          lld_macro_paths:
+            - lld_macro: '{#LINKID}'
+              path: $.id
+            - lld_macro: '{#LINKNODE}'
+              path: $.node
+            - lld_macro: '{#LOCALNODE}'
+              path: $.local
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.links
+      tags:
+        - tag: class
+          value: application
+        - tag: target
+          value: allstarlink
+      macros:
+        - macro: '{$ASL.IAX.JITTER.WARN}'
+          value: '80'
+          description: 'Worst-call jitter in ms, sustained 5m.'
+        - macro: '{$ASL.IAX.LOSS.WARN}'
+          value: '3'
+          description: 'Worst-call packet loss in %, sustained 5m.'
+        - macro: '{$ASL.IAX.RTT.WARN}'
+          value: '300'
+          description: 'Worst-call round trip time in ms, sustained 5m.'
+        - macro: '{$ASL.LINK.MATCHES}'
+          value: '.*'
+          description: 'Regex of remote node numbers to create per-link items for.'
+        - macro: '{$ASL.LINK.RECONNECTS.WARN}'
+          value: '3'
+          description: 'Reconnects of one link within 15m that count as flapping.'
+        - macro: '{$ASL.LINKS.MIN}'
+          value: '0'
+          description: 'Minimum direct links a node should have. 0 disables the trigger.'
+        - macro: '{$ASL.PSI.CPU.WARN}'
+          value: '10'
+          description: 'CPU pressure (some) in %, sustained 5m.'
+        - macro: '{$ASL.PSI.IO.WARN}'
+          value: '10'
+          description: 'I/O pressure (some) in %, sustained 5m.'
+        - macro: '{$ASL.TXKEYED.MAX}'
+          value: 15m
+          description: 'How long a transmitter may stay keyed before alerting.'
+  graphs:
+    - uuid: 46879788126742d79340a1a6a2be4669
+      name: 'ASL: Load average vs real stalls'
+      graph_items:
+        - color: 1A7C11
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.sys.load1
+        - sortorder: '1'
+          color: F63100
+          yaxisside: RIGHT
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.psi.cpu.some
+        - sortorder: '2'
+          color: 2774A4
+          yaxisside: RIGHT
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.psi.io.some
+    - uuid: 0182b231c8844ca6868b3cd791a5751f
+      name: 'ASL: IAX2 call quality'
+      graph_items:
+        - color: 1A7C11
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.iax.rx.jitter.max
+        - sortorder: '1'
+          color: 2774A4
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.iax.tx.jitter.max
+        - sortorder: '2'
+          color: A54F10
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.iax.rtt.max
+        - sortorder: '3'
+          color: F63100
+          yaxisside: RIGHT
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.iax.rx.loss.max
+        - sortorder: '4'
+          color: FC6EA3
+          yaxisside: RIGHT
+          item:
+            host: 'AllStarLink app_rpt by Zabbix agent 2'
+            key: asl.iax.tx.loss.max

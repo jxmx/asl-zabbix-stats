@@ -1,0 +1,3 @@
+# Install as /etc/sudoers.d/zabbix-asl (mode 0440, root:root); check with visudo -cf.
+# Lets the Zabbix agent run only the collector, with no arguments, as asterisk.
+zabbix ALL=(asterisk) NOPASSWD: /usr/local/bin/asl-zabbix-stats ""
