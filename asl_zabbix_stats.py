@@ -119,6 +119,11 @@ def parse_netstats(lines):
     rx_* is the LOCAL block (what we receive, from our jitter buffer);
     tx_* is the REMOTE block (what the far end reports receiving from us).
     Asterisk prints -1 where it has no data; those fields are omitted.
+
+    RTT is printed with %u from an unsigned pingtime that is computed as
+    "our clock - peer's echoed timestamp", so a peer with a skewed timestamp
+    yields a small negative RTT that shows up as ~4294967xxx. Values are read
+    as signed 32-bit, so such wrapped (negative) readings are omitted too.
     """
     chans = []
     for line in lines:
@@ -131,6 +136,8 @@ def parse_netstats(lines):
             continue
         chan = {"channel": tok[0]}
         for name, val in zip(NETSTAT_FIELDS, nums):
+            if val >= 2 ** 31:
+                val -= 2 ** 32
             if val >= 0:
                 chan[name] = val
         chans.append(chan)
